@@ -1,6 +1,7 @@
 package `in`.truemarriage.truemarriage
 
 import android.annotation.SuppressLint
+import android.app.Dialog
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
@@ -11,6 +12,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.os.Message
 import android.view.View
+import android.view.ViewGroup
 import android.webkit.CookieManager
 import android.webkit.PermissionRequest
 import android.webkit.ValueCallback
@@ -150,18 +152,7 @@ class MainActivity : AppCompatActivity() {
                 request: WebResourceRequest?,
             ): Boolean {
                 val url = request?.url?.toString() ?: return false
-
-                return if (isInternalOrAuthUrl(url)) {
-                    false
-                } else {
-                    try {
-                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
-                        startActivity(intent)
-                    } catch (e: Exception) {
-                        e.printStackTrace()
-                    }
-                    true
-                }
+                return handleCustomSchemeOrExternalUrl(view, url)
             }
         }
 
@@ -182,26 +173,71 @@ class MainActivity : AppCompatActivity() {
                 isUserGesture: Boolean,
                 resultMsg: Message?,
             ): Boolean {
-                val newWebView = WebView(this@MainActivity)
-                newWebView.settings.javaScriptEnabled = true
-                newWebView.settings.domStorageEnabled = true
-                newWebView.settings.userAgentString = cleanUserAgent
+                val popupDialog = Dialog(this@MainActivity, android.R.style.Theme_Material_Light_NoActionBar)
+                val newWebView = WebView(this@MainActivity).apply {
+                    layoutParams = ViewGroup.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                    )
+                    settings.javaScriptEnabled = true
+                    settings.domStorageEnabled = true
+                    settings.javaScriptCanOpenWindowsAutomatically = true
+                    settings.setSupportMultipleWindows(true)
+                    settings.useWideViewPort = true
+                    settings.loadWithOverviewMode = true
+                    settings.mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
+                    settings.userAgentString = cleanUserAgent
+                }
                 CookieManager.getInstance().setAcceptThirdPartyCookies(newWebView, true)
+
+                popupDialog.setContentView(newWebView)
+                popupDialog.setOnDismissListener {
+                    try {
+                        newWebView.stopLoading()
+                        newWebView.destroy()
+                    } catch (_: Exception) {}
+                }
+                popupDialog.show()
+
+                newWebView.webViewClient = object : WebViewClient() {
+                    override fun shouldOverrideUrlLoading(
+                        subView: WebView?,
+                        request: WebResourceRequest?,
+                    ): Boolean {
+                        val url = request?.url?.toString() ?: return false
+                        val lower = url.lowercase()
+
+                        // Handle UPI / payment intents from Razorpay popup
+                        if (!lower.startsWith("http://") && !lower.startsWith("https://")) {
+                            return handleCustomSchemeOrExternalUrl(subView, url)
+                        }
+
+                        // If popup redirects back to the main site after OAuth, load in main WebView and close popup
+                        if (lower.startsWith(TARGET_URL) || lower.contains("duckdns.org")) {
+                            binding.webView.loadUrl(url)
+                            try {
+                                popupDialog.dismiss()
+                            } catch (_: Exception) {}
+                            return true
+                        }
+
+                        // Keep Razorpay / bank 3DS / Netbanking / OAuth pages inside the popup WebView
+                        return false
+                    }
+                }
+
+                newWebView.webChromeClient = object : WebChromeClient() {
+                    override fun onCloseWindow(window: WebView?) {
+                        super.onCloseWindow(window)
+                        try {
+                            popupDialog.dismiss()
+                        } catch (_: Exception) {}
+                    }
+                }
 
                 val transport = resultMsg?.obj as? WebView.WebViewTransport
                 transport?.webView = newWebView
                 resultMsg?.sendToTarget()
-
-                newWebView.webViewClient = object : WebViewClient() {
-                    override fun shouldOverrideUrlLoading(
-                        view: WebView?,
-                        request: WebResourceRequest?,
-                    ): Boolean {
-                        val url = request?.url?.toString() ?: return false
-                        binding.webView.loadUrl(url)
-                        return true
-                    }
-                }
                 return true
             }
 
@@ -244,10 +280,66 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * Handles UPI / Android `intent://` deep links, custom payment schemes, and internal vs external HTTP(S) URLs.
+     */
+    private fun handleCustomSchemeOrExternalUrl(view: WebView?, url: String): Boolean {
+        val lowerUrl = url.lowercase()
+
+        // 1. Handle Android intent:// URIs (used by Razorpay & UPI apps)
+        if (lowerUrl.startsWith("intent://")) {
+            return try {
+                val intent = Intent.parseUri(url, Intent.URI_INTENT_SCHEME)
+                if (intent != null) {
+                    val packageManager = packageManager
+                    val info = packageManager.resolveActivity(intent, 0)
+                    if (info != null) {
+                        startActivity(intent)
+                    } else {
+                        val fallbackUrl = intent.getStringExtra("browser_fallback_url")
+                        if (!fallbackUrl.isNullOrEmpty()) {
+                            view?.loadUrl(fallbackUrl)
+                        }
+                    }
+                }
+                true
+            } catch (e: Exception) {
+                e.printStackTrace()
+                true
+            }
+        }
+
+        // 2. Handle UPI and native app schemes (upi://, tez://, phonepe://, paytmmp://, gpay://, whatsapp://, tel:, mailto:)
+        if (!lowerUrl.startsWith("http://") && !lowerUrl.startsWith("https://")) {
+            return try {
+                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                startActivity(intent)
+                true
+            } catch (e: Exception) {
+                e.printStackTrace()
+                true
+            }
+        }
+
+        // 3. Allow internal, OAuth, and Razorpay checkout URLs inside WebView
+        return if (isInternalOrAuthUrl(url)) {
+            false
+        } else {
+            try {
+                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                startActivity(intent)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+            true
+        }
+    }
+
     private fun isInternalOrAuthUrl(url: String): Boolean {
         val lowerUrl = url.lowercase()
         return lowerUrl.startsWith(TARGET_URL) ||
                 lowerUrl.contains("duckdns.org") ||
+                lowerUrl.contains("razorpay.com") ||
                 lowerUrl.contains("accounts.google.com") ||
                 lowerUrl.contains("accounts.youtube.com") ||
                 lowerUrl.contains("ssl.gstatic.com") ||
