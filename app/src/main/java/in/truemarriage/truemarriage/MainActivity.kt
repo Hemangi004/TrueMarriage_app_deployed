@@ -207,7 +207,7 @@ class MainActivity : AppCompatActivity() {
                         val url = request?.url?.toString() ?: return false
                         val lower = url.lowercase()
 
-                        // Handle UPI / payment intents from Razorpay popup
+                        // Handle UPI / payment intents from Cashfree/payment popup
                         if (!lower.startsWith("http://") && !lower.startsWith("https://")) {
                             return handleCustomSchemeOrExternalUrl(subView, url)
                         }
@@ -221,7 +221,7 @@ class MainActivity : AppCompatActivity() {
                             return true
                         }
 
-                        // Keep Razorpay / bank 3DS / Netbanking / OAuth pages inside the popup WebView
+                        // Keep Cashfree / bank 3DS / Netbanking / OAuth pages inside the popup WebView
                         return false
                     }
                 }
@@ -286,7 +286,7 @@ class MainActivity : AppCompatActivity() {
     private fun handleCustomSchemeOrExternalUrl(view: WebView?, url: String): Boolean {
         val lowerUrl = url.lowercase()
 
-        // 1. Handle Android intent:// URIs (used by Razorpay & UPI apps)
+        // 1. Handle Android intent:// URIs (used by Cashfree & UPI apps)
         if (lowerUrl.startsWith("intent://")) {
             return try {
                 val intent = Intent.parseUri(url, Intent.URI_INTENT_SCHEME)
@@ -321,7 +321,7 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // 3. Allow internal, OAuth, and Razorpay checkout URLs inside WebView
+        // 3. Allow internal, OAuth, and Cashfree checkout URLs inside WebView
         return if (isInternalOrAuthUrl(url)) {
             false
         } else {
@@ -339,6 +339,7 @@ class MainActivity : AppCompatActivity() {
         val lowerUrl = url.lowercase()
         return lowerUrl.startsWith(TARGET_URL) ||
                 lowerUrl.contains("duckdns.org") ||
+                lowerUrl.contains("cashfree.com") ||
                 lowerUrl.contains("razorpay.com") ||
                 lowerUrl.contains("accounts.google.com") ||
                 lowerUrl.contains("accounts.youtube.com") ||
