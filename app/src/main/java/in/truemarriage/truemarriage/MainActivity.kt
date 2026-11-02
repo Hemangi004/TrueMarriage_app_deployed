@@ -57,7 +57,7 @@ class MainActivity : AppCompatActivity() {
         }
 
     companion object {
-        private const val TARGET_URL = "https://mtruemarriage.duckdns.org"
+        private const val TARGET_URL = "https://app.truemarriage.in"
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -213,7 +213,7 @@ class MainActivity : AppCompatActivity() {
                         }
 
                         // If popup redirects back to the main site after OAuth, load in main WebView and close popup
-                        if (lower.startsWith(TARGET_URL) || lower.contains("duckdns.org")) {
+                        if (lower.startsWith(TARGET_URL) || lower.contains("truemarriage.in")) {
                             binding.webView.loadUrl(url)
                             try {
                                 popupDialog.dismiss()
@@ -338,8 +338,7 @@ class MainActivity : AppCompatActivity() {
     private fun isInternalOrAuthUrl(url: String): Boolean {
         val lowerUrl = url.lowercase()
         return lowerUrl.startsWith(TARGET_URL) ||
-                lowerUrl.contains("duckdns.org") ||
-                lowerUrl.contains("cashfree.com") ||
+                lowerUrl.contains("truemarriage.in") ||
                 lowerUrl.contains("razorpay.com") ||
                 lowerUrl.contains("accounts.google.com") ||
                 lowerUrl.contains("accounts.youtube.com") ||
